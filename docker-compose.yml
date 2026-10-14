@@ -1,0 +1,51 @@
+services:
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_DB: lms
+      POSTGRES_USER: lms
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-lms}
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lms -d lms"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  web:
+    build: .
+    image: lms-backend
+    env_file: .env
+    environment: &db-env
+      DB_HOST: db
+      DB_NAME: lms
+      DB_USER: lms
+      DB_PASSWORD: ${DB_PASSWORD:-lms}
+    # Migrations and partitions before serving, so the first insert has a partition to land in.
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             python manage.py rotate_location_partitions &&
+             gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 4"
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # Creates upcoming partitions and drops expired ones. Hourly, so a missed run is harmless;
+  # on failure (e.g. migrations still running) it retries after 10 seconds.
+  partitions:
+    image: lms-backend
+    env_file: .env
+    environment: *db-env
+    command: >
+      sh -c "while true; do
+               if python manage.py rotate_location_partitions; then sleep 3600; else sleep 10; fi;
+             done"
+    depends_on:
+      web:
+        condition: service_started
+
+volumes:
+  pgdata:
