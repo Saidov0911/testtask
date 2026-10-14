@@ -1,0 +1,35 @@
+# Production overrides for a small shared VPS (1 vCPU, 1 GB RAM, other projects running).
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Hard memory limits keep this stack from starving neighbours; log rotation keeps the disk safe.
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  db:
+    # Small-footprint Postgres: enough for a demo, bounded memory.
+    command: >
+      postgres
+        -c shared_buffers=32MB
+        -c max_connections=20
+        -c work_mem=2MB
+        -c maintenance_work_mem=16MB
+    mem_limit: 192m
+    restart: unless-stopped
+    logging: *logging
+
+  web:
+    environment:
+      WEB_CONCURRENCY: 2
+    mem_limit: 256m
+    restart: unless-stopped
+    logging: *logging
+
+  partitions:
+    mem_limit: 96m
+    restart: unless-stopped
+    logging: *logging

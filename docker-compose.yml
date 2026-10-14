@@ -26,7 +26,7 @@ services:
     command: >
       sh -c "python manage.py migrate --noinput &&
              python manage.py rotate_location_partitions &&
-             gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 4"
+             gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers $${WEB_CONCURRENCY:-4}"
     ports:
       - "${APP_PORT:-8000}:8000"
     depends_on:
