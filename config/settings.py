@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
+    'drf_spectacular',
     'tracking',
 ]
 
@@ -138,6 +139,25 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': ['rest_framework.permissions.IsAuthenticated'],
     'DEFAULT_RENDERER_CLASSES': ['rest_framework.renderers.JSONRenderer'],
     'UNAUTHENTICATED_USER': None,
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+}
+
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'School LMS: location and AI tutor API',
+    'DESCRIPTION': (
+        'Child device location updates, parent overview of their children, '
+        'and the AI tutor session webhook.'
+    ),
+    'VERSION': '1.0.0',
+    # The docs themselves are public; every documented endpoint still enforces its own auth.
+    'SERVE_PERMISSIONS': ['rest_framework.permissions.AllowAny'],
+    'SERVE_AUTHENTICATION': [],
+    'SERVE_INCLUDE_SCHEMA': False,
+    'COMPONENT_SPLIT_REQUEST': True,
+    # Pinned instead of @latest, so a new Swagger UI release cannot change the docs page.
+    'SWAGGER_UI_DIST': 'https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.17.14',
+    'SWAGGER_UI_FAVICON_HREF': 'https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.17.14/favicon-32x32.png',
+    'SWAGGER_UI_SETTINGS': {'persistAuthorization': True},
 }
 
 # "Today" for tutor statistics is defined by the school's timezone, not UTC.

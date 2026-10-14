@@ -289,3 +289,12 @@ class TutorWebhookTests(TestCase):
     def test_completed_without_end_is_rejected(self):
         response = self.send(self.event('completed'))
         self.assertEqual(response.status_code, 400)
+
+
+class ApiDocsTests(TestCase):
+    def test_schema_and_swagger_ui_are_public(self):
+        client = APIClient()
+        schema = client.get('/api/schema/')
+        self.assertEqual(schema.status_code, 200)
+        self.assertIn(b'/v1/parent/children/overview', schema.content)
+        self.assertEqual(client.get('/api/docs/').status_code, 200)

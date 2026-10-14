@@ -6,7 +6,7 @@ Ota-onalar uchun ikki asosiy API va AI tutor webhook'i uchun minimal backend.
 - `GET /v1/parent/children/overview`: ota-onaning bolalari, oxirgi koordinata va bugungi tutor vaqti.
 - `POST /v1/webhooks/ai-tutor/sessions`: AI tutor provayderidan sessiya natijasi (qo'shimcha).
 
-**Stack:** Python 3.14, Django 6.1, Django REST Framework, PostgreSQL 18, Docker Compose.
+**Stack:** Python 3.14, Django 6.1, Django REST Framework, drf-spectacular (OpenAPI/Swagger), PostgreSQL 18, Docker Compose.
 
 ## Ishga tushirish
 
@@ -18,7 +18,7 @@ docker compose up -d --build  # db + web (gunicorn) + partitions
 docker compose exec web python manage.py test
 ```
 
-API `http://localhost:8000` da ochiladi (port band bo'lsa, `.env` dagi `APP_PORT` ni o'zgartiring).
+API `http://localhost:8000` da ochiladi, Swagger UI esa `http://localhost:8000/api/docs/` da (port band bo'lsa, `.env` dagi `APP_PORT` ni o'zgartiring).
 `web` ishga tushishda migratsiyalarni va partitionlarni avtomatik yaratadi. `partitions` servisi
 har soatda yangi kunlik partitionlarni yaratadi va 7 kundan eskilarini o'chiradi.
 
@@ -45,10 +45,32 @@ Baza sozlamalari `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT` env o
 | `tracking/views.py` | Endpointlar va kirish validatsiyasi |
 | `tracking/auth.py` | Auth qatlami (stub) va webhook HMAC tekshiruvi |
 | `tracking/partitions.py` | Kunlik partitionlar va 7 kunlik saqlash |
-| `tracking/tests.py` | 18 ta test, haqiqiy PostgreSQL ustida |
+| `tracking/schema.py` | Auth sxemalarining OpenAPI tavsifi |
+| `tracking/tests.py` | 19 ta test, haqiqiy PostgreSQL ustida |
 | `docs/schema.sql` | Migratsiyalar yaratgan haqiqiy DDL (`pg_dump`) |
+| `docs/openapi.yaml` | OpenAPI 3 spetsifikatsiyasi (generatsiya qilingan) |
 
 ## API
+
+### Swagger / OpenAPI
+
+| URL | Mazmuni |
+|---|---|
+| `/api/docs/` | Swagger UI: so'rovlarni brauzerdan yuborib ko'rish mumkin |
+| `/api/schema/` | OpenAPI 3 sxemasi (YAML) |
+| [`docs/openapi.yaml`](docs/openapi.yaml) | Repodagi nusxasi, Postman yoki Insomnia'ga import qilish uchun |
+
+Swagger'da **Authorize** tugmasi orqali `DeviceAuth` (`X-Device-Id`) yoki `ParentAuth`
+(`X-Parent-Id`) kiritiladi; har bir endpointda faqat u qabul qiladigan auth turi ko'rsatiladi.
+Webhook HMAC imzo talab qiladi, shuning uchun uni Swagger'dan to'g'ridan-to'g'ri chaqirib bo'lmaydi
+(imzo formati endpoint tavsifida yozilgan). Hujjat sahifalari ochiq, endpointlar esa o'z auth'ini
+baribir tekshiradi.
+
+Sxemani qayta generatsiya qilish:
+
+```bash
+.venv/bin/python manage.py spectacular --validate --fail-on-warn --file docs/openapi.yaml
+```
 
 Autentifikatsiya: shartga ko'ra tayyor auth qatlami bor deb olingan. `tracking/auth.py` dagi stub
 gateway tekshirgan identifikatorni `X-Device-Id` yoki `X-Parent-Id` headeridan oladi. Qolgan kod
@@ -237,6 +259,7 @@ Hammasi haqiqiy PostgreSQL ustida ishlaydi (SQLite'da `ON CONFLICT ... WHERE`, p
 | `ConcurrentLocationUpdateTests` | 16 ta parallel tranzaksiya: eng yangi nuqta g'olib; bir xil nuqta aniq bir marta yoziladi |
 | `OverviewTests` | faqat o'z bolalari, umumiy bola ikkala ota-onada, ma'lumoti yo'q bola, 401/403, yarim tundan o'tgan sessiya, Toshkent va UTC farqi |
 | `TutorWebhookTests` | takroriy event, kechikkan `in_progress`, bolani almashtirishga urinish, noma'lum bola, noto'g'ri imzo, eski timestamp |
+| `ApiDocsTests` | Swagger UI va sxema autentifikatsiyasiz ochiladi |
 
 ## Muhokama savollari
 

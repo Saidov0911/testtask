@@ -1,0 +1,280 @@
+openapi: 3.0.3
+info:
+  title: 'School LMS: location and AI tutor API'
+  version: 1.0.0
+  description: Child device location updates, parent overview of their children, and
+    the AI tutor session webhook.
+paths:
+  /v1/location-updates:
+    post:
+      operationId: v1_location_updates_create
+      description: Idempotent. The child is resolved from the authenticated device.
+        A repeated update is not stored twice; an older update is kept in the 7-day
+        history but never replaces a newer last location. Both still return 200, so
+        the phone stops retrying.
+      summary: Receive a coordinate from the child device
+      tags:
+      - Location
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LocationUpdateRequest'
+            examples:
+              Location:
+                value:
+                  latitude: 41.311081
+                  longitude: 69.240562
+                  recorded_at: '2026-10-14T05:40:53Z'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/LocationUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/LocationUpdateRequest'
+        required: true
+      security:
+      - DeviceAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LocationUpdateResult'
+              examples:
+                NewPoint:
+                  value:
+                    stored: true
+                    is_latest: true
+                  summary: New point
+                LatePointAfterOffline:
+                  value:
+                    stored: true
+                    is_latest: false
+                  summary: Late point after offline
+                RetryOfTheSamePoint:
+                  value:
+                    stored: false
+                    is_latest: false
+                  summary: Retry of the same point
+          description: ''
+        '400':
+          description: Invalid coordinates, or recorded_at in the future / older than
+            7 days.
+        '401':
+          description: No or invalid credentials.
+        '403':
+          description: Not a device, or the device is inactive / not bound to a child.
+  /v1/parent/children/overview:
+    get:
+      operationId: v1_parent_children_overview_retrieve
+      description: Only children linked to the authenticated parent. Children without
+        a location or tutor sessions are included with null / 0.
+      summary: Overview of the parent's children
+      tags:
+      - Parent
+      security:
+      - ParentAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChildrenOverview'
+          description: ''
+        '401':
+          description: No or invalid credentials.
+        '403':
+          description: Credentials are not a parent.
+  /v1/webhooks/ai-tutor/sessions:
+    post:
+      operationId: v1_webhooks_ai_tutor_sessions_create
+      description: 'Called by the AI tutor provider. Safe to deliver late, out of
+        order or more than once: events are upserted by external_id and "completed"
+        is terminal. Signature: X-Tutor-Signature = hex(HMAC-SHA256(secret, "<X-Tutor-Timestamp>.<raw
+        body>")).'
+      summary: AI tutor session event
+      parameters:
+      - in: header
+        name: X-Tutor-Timestamp
+        schema:
+          type: integer
+        description: Unix seconds; must be within 5 minutes of server time.
+        required: true
+      tags:
+      - Webhooks
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TutorSessionEventRequest'
+            examples:
+              CompletedSession:
+                value:
+                  external_id: sess-123
+                  child_id: 3
+                  status: completed
+                  started_at: '2026-10-14T03:40:00Z'
+                  ended_at: '2026-10-14T04:10:00Z'
+                summary: Completed session
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TutorSessionEventRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TutorSessionEventRequest'
+        required: true
+      security:
+      - TutorWebhookSignature: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TutorSessionEventResult'
+          description: ''
+        '400':
+          description: Invalid payload or unknown child.
+        '401':
+          description: Missing or invalid signature, or stale timestamp.
+components:
+  schemas:
+    ChildOverview:
+      type: object
+      properties:
+        child_id:
+          type: integer
+        full_name:
+          type: string
+        last_location:
+          allOf:
+          - $ref: '#/components/schemas/LastLocation'
+          nullable: true
+          description: Null if the child never sent a location.
+        tutor_seconds_today:
+          type: integer
+          description: Completed AI tutor time today (Asia/Tashkent), only the part
+            after midnight.
+      required:
+      - child_id
+      - full_name
+      - last_location
+      - tutor_seconds_today
+    ChildrenOverview:
+      type: object
+      properties:
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChildOverview'
+      required:
+      - children
+    LastLocation:
+      type: object
+      properties:
+        latitude:
+          type: number
+          format: double
+        longitude:
+          type: number
+          format: double
+        recorded_at:
+          type: string
+          format: date-time
+      required:
+      - latitude
+      - longitude
+      - recorded_at
+    LocationUpdateRequest:
+      type: object
+      properties:
+        latitude:
+          type: number
+          format: double
+          maximum: 90
+          minimum: -90
+        longitude:
+          type: number
+          format: double
+          maximum: 180
+          minimum: -180
+        recorded_at:
+          type: string
+          format: date-time
+          description: When the device took the fix (device clock, ISO 8601).
+      required:
+      - latitude
+      - longitude
+      - recorded_at
+    LocationUpdateResult:
+      type: object
+      properties:
+        stored:
+          type: boolean
+          description: False when this exact update was already received (a retry).
+        is_latest:
+          type: boolean
+          description: False when a newer location is already known.
+      required:
+      - is_latest
+      - stored
+    StatusEnum:
+      enum:
+      - in_progress
+      - completed
+      type: string
+      description: |-
+        * `in_progress` - In Progress
+        * `completed` - Completed
+    TutorSessionEventRequest:
+      type: object
+      properties:
+        external_id:
+          type: string
+          minLength: 1
+          description: Session id on the AI tutor provider side.
+          maxLength: 64
+        child_id:
+          type: integer
+          minimum: 1
+        status:
+          $ref: '#/components/schemas/StatusEnum'
+        started_at:
+          type: string
+          format: date-time
+        ended_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Required when completed.
+      required:
+      - child_id
+      - external_id
+      - started_at
+      - status
+    TutorSessionEventResult:
+      type: object
+      properties:
+        applied:
+          type: boolean
+          description: False for a duplicate, stale or conflicting event.
+      required:
+      - applied
+  securitySchemes:
+    DeviceAuth:
+      type: apiKey
+      in: header
+      name: X-Device-Id
+      description: 'Stub for the existing auth layer: id of the authenticated child
+        device.'
+    ParentAuth:
+      type: apiKey
+      in: header
+      name: X-Parent-Id
+      description: 'Stub for the existing auth layer: id of the authenticated parent.'
+    TutorWebhookSignature:
+      type: apiKey
+      in: header
+      name: X-Tutor-Signature
+      description: hex(HMAC-SHA256(secret, "<X-Tutor-Timestamp>.<raw body>")). X-Tutor-Timestamp
+        (unix seconds) must be within 5 minutes of server time.
