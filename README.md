@@ -270,18 +270,37 @@ Hammasi haqiqiy PostgreSQL ustida ishlaydi (SQLite'da `ON CONFLICT ... WHERE`, p
 | So'rovlar | 20 000 / 15 ≈ **1 333 req/s** (o'rtacha; tanaffus va maktabdan chiqish vaqtida pik 2–3 baravar) |
 | Kuniga qatorlar | 1 333 × 86 400 ≈ **115 mln** |
 | 7 kunga | ≈ **806 mln** qator |
-| Bir qator | tuple header 24 B + 6 ta ustun × 8 B = 72 B, item pointer bilan ≈ 76 B; PK indeks yozuvi ≈ 30 B; jami **≈ 110 B** |
-| Hajm | ≈ **12–13 GB/kun**, 7 kun (+1 kun zaxira) ≈ **90–100 GB**, WAL va replikalar bunga qo'shimcha |
+| Bir qator | nazariy: tuple header 24 B + 6 × 8 B ma'lumot + item pointer + PK indeks yozuvi ≈ 110 B; **o'lchangan: 127 B** (2 mln qator, jadval + indeks) |
+| Hajm | 115 mln × 127 B ≈ **14.6 GB/kun**, 7 kun ≈ **102 GB** (+1 kunlik partition zaxirasi bilan ≈ 117 GB); WAL va replikalar bunga qo'shimcha |
 | Trafik | 1 333 × ~300 B ≈ 0.4 MB/s, muammo emas |
 | `child_last_location` | atigi 20 000 qator, lekin sekundiga 1 333 marta yangilanadi |
 
-Bu hisob taxminiy; aniq raqam uchun 1 mln qator yozib, `pg_total_relation_size` bilan o'lchash kerak.
+Qator hajmi taxmin emas: 2 mln qator yozib, `pg_total_relation_size` bilan o'lchangan (pastdagi "O'lchangan natijalar" bo'limiga qarang).
 
 Xulosa: bitta yaxshi PostgreSQL instansi buni ko'taradi, lekin quyidagilar kerak bo'ladi:
+- Doimiy DB ulanishlari (`CONN_MAX_AGE`, sozlangan): ularsiz har bir so'rov yangi Postgres ulanishi ochadi va o'tkazuvchanlik 15 baravar past bo'ladi (o'lchangan).
 - PgBouncer (transaction pooling): gunicorn workerlari ko'payganda ulanishlar soni cheklanadi.
 - `child_last_location` uchun `fillfactor = 70`: yangilanadigan ustunlar indekslanmagan, shuning
   uchun HOT update ishlaydi va bloat kamayadi.
 - Kerak bo'lsa, telefon nuqtalarni 1 daqiqalik batch qilib yuboradi (so'rovlar 4 baravar kamayadi, offline sinxronlash ham shu yo'l bilan).
+
+### O'lchangan natijalar
+
+Laptop (Apple Silicon), PostgreSQL 18. Baza: 20 000 bola, 15 000 ota-ona, 400 000 tutor sessiya,
+2 mln koordinata tarixi.
+
+| Nima | Natija |
+|---|---|
+| Overview so'rovi (`EXPLAIN ANALYZE`, disk'dan o'qish bilan) | **1.5 ms** bajarilish; hamma qadam index scan, `location_updates` ga umuman tegilmaydi, shuning uchun tarix hajmiga bog'liq emas |
+| `POST /v1/location-updates`, gunicorn 4 worker, 16 parallel ulanish, `CONN_MAX_AGE=0` | 172 req/s, o'rtacha 93 ms |
+| Xuddi shu, `CONN_MAX_AGE=60` | **2 579 req/s**, o'rtacha 6 ms, p99 13 ms |
+
+Benchmark'da bir xil nuqta qayta-qayta yuborilgan (conflict yo'li); yangi qatorni haqiqatan yozish
+biroz qimmatroq. Natijalar bitta mashinadagi taxminiy ko'rsatkich, production sig'imini rejalash
+uchun emas.
+
+Overview'da planning vaqti (≈3 ms) bajarilishdan (1.5 ms) uzoqroq: yuk oshsa, prepared statement'lar
+(psycopg server-side prepare) buni olib tashlaydi.
 
 ### Overview sekinlashsa
 
